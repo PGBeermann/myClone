@@ -1,0 +1,29 @@
+# Imagen GPU (motor MuseTalk 1.5). Requiere GPU NVIDIA (≥ 8 GB VRAM) y NVIDIA Container Toolkit.
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-pip python3-dev build-essential git curl ffmpeg fonts-dejavu-core \
+      libgl1 libglib2.0-0 ca-certificates \
+    && rm -rf /var/lib/apt/lists/* && ln -sf /usr/bin/python3 /usr/bin/python
+
+# MuseTalk + dependencias (PyTorch 2.0.1/cu118, OpenMMLab). Los pesos se descargan al primer arranque.
+COPY install/install_musetalk.sh /tmp/install_musetalk.sh
+RUN pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 \
+      --index-url https://download.pytorch.org/whl/cu118 \
+ && git clone --depth 1 https://github.com/TMElyralab/MuseTalk.git /opt/MuseTalk \
+ && pip install --no-cache-dir -r /opt/MuseTalk/requirements.txt \
+ && pip install --no-cache-dir -U openmim "huggingface_hub[cli]" gdown \
+ && mim install mmengine && mim install "mmcv==2.0.1" && mim install "mmdet==3.1.0" && mim install "mmpose==1.1.0"
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app ./app
+COPY static ./static
+COPY install/entrypoint_gpu.sh /entrypoint.sh
+
+ENV ENGINE=musetalk MUSETALK_DIR=/opt/MuseTalk DATA_DIR=/data
+VOLUME ["/data", "/opt/MuseTalk/models", "/opt/MuseTalk/results"]
+EXPOSE 8000
+ENTRYPOINT ["bash", "/entrypoint.sh"]

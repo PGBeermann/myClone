@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clon Docente · Video con sincronización labial</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">◉</span>
+    <div><h1>Clon Docente</h1><p>Video de su persona con sincronización labial a partir de audio</p></div>
+  </div>
+  <div id="engineBadge" class="badge">…</div>
+</header>
+
+<div id="engineWarn" class="warn hidden"></div>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="aprender" role="tab">1 · Sesión de aprendizaje</button>
+  <button class="tab" data-tab="audio" role="tab">2 · Audio</button>
+  <button class="tab" data-tab="generar" role="tab">3 · Generar video</button>
+</nav>
+
+<main>
+<!-- =================================================== 1. APRENDIZAJE -->
+<section id="tab-aprender" class="panel active">
+  <div class="grid2">
+    <div class="card">
+      <h2>Grabar sesión de aprendizaje facial</h2>
+      <div class="stage">
+        <video id="cam" autoplay muted playsinline></video>
+        <div id="guide" class="guide"><div class="oval"></div></div>
+        <div id="countdown" class="countdown hidden"></div>
+        <div id="recBadge" class="rec hidden">● REC <span id="recTime">0</span> s</div>
+      </div>
+      <div id="prompter" class="prompter">Pulse <b>Activar cámara</b> para comenzar.</div>
+      <div class="row">
+        <button id="btnCam" class="btn">Activar cámara</button>
+        <button id="btnRec" class="btn primary" disabled>Grabar (30 s)</button>
+        <button id="btnStop" class="btn danger" disabled>Detener</button>
+      </div>
+      <details class="tips" open>
+        <summary>Cómo obtener el mejor resultado</summary>
+        <ul>
+          <li>Rostro de frente dentro del óvalo, cámara a la altura de los ojos.</li>
+          <li>Luz frontal y difusa (ventana o lámpara detrás de la cámara); sin contraluz.</li>
+          <li>Fondo y ropa iguales a los que desea en el video final.</li>
+          <li>Movimientos naturales y suaves: parpadee, asienta levemente, <b>labios relajados</b>.</li>
+          <li>Lea el texto guía en voz baja o mantenga la boca casi cerrada: la boca será regenerada.</li>
+          <li>Sin manos, micrófonos ni objetos delante de la boca o el mentón.</li>
+        </ul>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Registrar avatar</h2>
+      <label>Nombre del avatar
+        <input id="avName" type="text" maxlength="80" placeholder="Ej.: Dr. Pedro · bata · laboratorio">
+      </label>
+      <label class="file">…o suba un video ya grabado (MP4, MOV, WEBM)
+        <input id="avFile" type="file" accept="video/*">
+      </label>
+      <video id="recPreview" class="preview hidden" controls playsinline></video>
+      <label class="check">
+        <input id="avConsent" type="checkbox">
+        <span>Declaro que soy la persona que aparece en el video, o que cuento con su autorización
+        expresa y por escrito para generar contenido sintético con su imagen y su voz.</span>
+      </label>
+      <button id="btnUploadAv" class="btn primary" disabled>Analizar video</button>
+      <div id="avProgress" class="progress hidden"><div></div></div>
+      <div id="quality"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Avatares registrados</h2>
+    <div id="avatarList" class="list"></div>
+  </div>
+</section>
+
+<!-- =================================================== 2. AUDIO -->
+<section id="tab-audio" class="panel">
+  <div class="grid2">
+    <div class="card">
+      <h2>Grabar audio</h2>
+      <canvas id="meter" height="60"></canvas>
+      <div class="row">
+        <button id="btnMic" class="btn primary">Grabar con micrófono</button>
+        <button id="btnMicStop" class="btn danger" disabled>Detener</button>
+        <span id="micTime" class="muted">0 s</span>
+      </div>
+      <audio id="micPreview" class="hidden" controls></audio>
+      <p class="muted">Use un ambiente silencioso y mantenga el micrófono a unos 15–20 cm.</p>
+    </div>
+    <div class="card">
+      <h2>Registrar audio</h2>
+      <label>Nombre<input id="auName" type="text" maxlength="80" placeholder="Ej.: Clase 3 · Alcanos"></label>
+      <label class="file">…o suba un archivo (WAV, MP3, M4A, OGG o un video con audio)
+        <input id="auFile" type="file" accept="audio/*,video/*">
+      </label>
+      <button id="btnUploadAu" class="btn primary" disabled>Guardar audio</button>
+      <div id="auProgress" class="progress hidden"><div></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Audios disponibles</h2>
+    <div id="audioList" class="list"></div>
+  </div>
+</section>
+
+<!-- =================================================== 3. GENERAR -->
+<section id="tab-generar" class="panel">
+  <div class="card">
+    <h2>Nuevo video</h2>
+    <div class="grid3">
+      <label>Avatar<select id="genAvatar"></select></label>
+      <label>Audio<select id="genAudio"></select></label>
+      <label>Título<input id="genTitle" type="text" maxlength="100" placeholder="(opcional)"></label>
+    </div>
+    <label class="check"><input id="genWm" type="checkbox" checked>
+      <span>Añadir marca de agua <i>"Contenido generado con IA"</i> (recomendado por transparencia)</span></label>
+    <button id="btnGen" class="btn primary">Generar video</button>
+  </div>
+  <div class="card">
+    <h2>Trabajos</h2>
+    <div id="jobList" class="list"></div>
+  </div>
+  <div class="card">
+    <h2>Videos generados</h2>
+    <div id="outList" class="gallery"></div>
+  </div>
+</section>
+</main>
+
+<div id="login" class="modal hidden">
+  <form id="loginForm" class="card">
+    <h2>Acceso</h2>
+    <label>Clave de acceso<input id="loginToken" type="password" autocomplete="current-password"></label>
+    <button class="btn primary">Entrar</button>
+    <p id="loginErr" class="err"></p>
+  </form>
+</div>
+<div id="toast" class="toast hidden"></div>
+<footer>Motores libres: MuseTalk (MIT) · Wav2Lip (uso académico/no comercial). Use esta herramienta solo con su propia imagen o con autorización expresa.</footer>
+<script src="app.js"></script>
+</body>
+</html>
