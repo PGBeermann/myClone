@@ -42,7 +42,10 @@ def has_stream(path: Path, kind: str) -> bool:
 def normalize_enrollment(src: Path, dst: Path) -> None:
     """Video de aprendizaje → MP4 H.264, 25 fps constantes, alto máx. configurable, sin audio."""
     h = config.ENROLL_MAX_HEIGHT
-    vf = f"scale=-2:'min({h},ih)':flags=lanczos,fps={config.FPS},format=yuv420p"
+    # Se limita el lado MENOR: horizontal 1280×720, vertical (celular) 720×1280.
+    # Antes se limitaba la altura y un video vertical quedaba en 405×720.
+    vf = (f"scale='if(gt(iw,ih),-2,min({h},iw))':'if(gt(iw,ih),min({h},ih),-2)':flags=lanczos,"
+          f"fps={config.FPS},format=yuv420p")
     _run(["ffmpeg", "-y", "-v", "error", "-i", str(src),
           "-t", str(config.MAX_ENROLL_SECONDS), "-vf", vf, "-an",
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", str(dst)])

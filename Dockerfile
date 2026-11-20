@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt "opencv-python-headless==4.10.0.84" \
  && pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu \
- && pip install --no-cache-dir "librosa==0.10.2.post1" scipy soundfile
+ && pip install --no-cache-dir "librosa==0.10.2.post1" scipy soundfile tqdm
 
 COPY install/install_wav2lip.sh /tmp/install_wav2lip.sh
 RUN WAV2LIP_DIR=/opt/Wav2Lip SKIP_PIP=1 bash /tmp/install_wav2lip.sh

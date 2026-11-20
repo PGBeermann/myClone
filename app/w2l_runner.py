@@ -77,64 +77,86 @@ def mel_chunks(mel: np.ndarray, fps: float) -> list[np.ndarray]:
 
 # ------------------------------------------------------------------ sesión de aprendizaje
 def prepare(args):
-    import face_detection  # del repositorio Wav2Lip
+    """Detección facial en flujo continuo: solo se mantiene en memoria un lote de cuadros.
+
+    La versión anterior cargaba TODOS los cuadros (30 s × 25 fps × 1280×720 ≈ 2 GB) más una
+    copia reducida, y el proceso era terminado por falta de memoria en el VPS.
+    """
+    import torch
+    torch.set_num_threads(max(1, os.cpu_count() or 1))
+    import face_detection  # del repositorio Wav2Lip (requiere tqdm)
     avatar = Path(args.avatar)
     frames_dir = avatar / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     cap = cv2.VideoCapture(args.video)
-    frames = []
-    while True:
-        ok, f = cap.read()
-        if not ok:
-            break
-        frames.append(f)
-    cap.release()
-    if not frames:
-        raise SystemExit("El video de aprendizaje no tiene cuadros.")
-    h, w = frames[0].shape[:2]
-    scale = min(1.0, DET_HEIGHT / h)
-    print(f"Cuadros: {len(frames)}  Resolución: {w}x{h}  Dispositivo: {device()}", flush=True)
+    if not cap.isOpened():
+        raise SystemExit("ERROR: no se pudo abrir el video de aprendizaje.")
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+    ok, first = cap.read()
+    if not ok:
+        raise SystemExit("ERROR: el video de aprendizaje no tiene cuadros.")
+    h, w = first.shape[:2]
+    scale = min(1.0, DET_HEIGHT / min(h, w))  # lado MENOR a 480 px (horizontal o vertical)
+    dw, dh = int(w * scale), int(h * scale)
+    print(f"Cuadros: ~{total}  Resolución: {w}x{h}  Detección a {dw}x{dh}  Dispositivo: {device()}", flush=True)
 
     det = face_detection.FaceAlignment(face_detection.LandmarksType._2D, flip_input=False, device=device())
-    small = [cv2.resize(f, (int(w * scale), int(h * scale))) if scale < 1 else f for f in frames]
-    bs, boxes, i = args.det_batch, [], 0
-    while i < len(small):
-        try:
-            preds = det.get_detections_for_batch(np.array(small[i:i + bs]))
-        except RuntimeError:
-            if bs == 1:
-                raise
-            bs //= 2
-            print(f"Memoria insuficiente; lote de detección reducido a {bs}", flush=True)
-            continue
-        boxes.extend(preds)
-        i += len(preds)
-        progress(min(i, len(small)), len(small), "deteccion")
+    bs, boxes, buf, k = args.det_batch, [], [], 0
+
+    def flush():
+        nonlocal bs
+        j = 0
+        while j < len(buf):
+            try:
+                preds = det.get_detections_for_batch(np.array(buf[j:j + bs]))
+            except RuntimeError:
+                if bs == 1:
+                    raise
+                bs //= 2
+                print(f"Memoria insuficiente; lote de detección reducido a {bs}", flush=True)
+                continue
+            boxes.extend(preds)
+            j += len(preds)
+        buf.clear()
+        progress(len(boxes), max(total, len(boxes)), "deteccion")
+
+    frame = first
+    while ok:
+        cv2.imwrite(str(frames_dir / f"{k:06d}.jpg"), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        buf.append(cv2.resize(frame, (dw, dh)) if scale < 1 else frame)
+        k += 1
+        if len(buf) >= bs:
+            flush()
+        ok, frame = cap.read()
+    cap.release()
+    if buf:
+        flush()
     del det
 
     # Cuadros sin rostro: se interpola con la caja válida más cercana.
-    valid = [k for k, b in enumerate(boxes) if b is not None]
-    if len(valid) < 0.8 * len(boxes):
-        raise SystemExit(f"Rostro detectado solo en {len(valid)}/{len(boxes)} cuadros. Grabe de nuevo, de frente a la cámara.")
+    valid = [i for i, b in enumerate(boxes) if b is not None]
+    if not valid or len(valid) < 0.8 * len(boxes):
+        raise SystemExit(f"ERROR: rostro detectado solo en {len(valid)}/{len(boxes)} cuadros. "
+                         "Grabe de nuevo, de frente a la cámara y con buena luz.")
     arr = np.zeros((len(boxes), 4), dtype=np.float32)
-    for k in range(len(boxes)):
-        src = boxes[k] if boxes[k] is not None else boxes[min(valid, key=lambda v: abs(v - k))]
+    for i in range(len(boxes)):
+        src = boxes[i] if boxes[i] is not None else boxes[min(valid, key=lambda v: abs(v - i))]
         x1, y1, x2, y2 = (c / scale for c in src)
-        arr[k] = (max(0, y1 - PADS[0]), min(h, y2 + PADS[1]), max(0, x1 - PADS[2]), min(w, x2 + PADS[3]))
+        arr[i] = (max(0, y1 - PADS[0]), min(h, y2 + PADS[1]), max(0, x1 - PADS[2]), min(w, x2 + PADS[3]))
     # Suavizado temporal (ventana de 5 cuadros), igual que el original.
     T = 5
     sm = arr.copy()
-    for k in range(len(arr)):
-        win = arr[len(arr) - T:] if k + T > len(arr) else arr[k:k + T]
-        sm[k] = win.mean(axis=0)
-    np.save(avatar / "boxes.npy", sm.astype(np.int32))
-
-    for k, f in enumerate(frames):
-        cv2.imwrite(str(frames_dir / f"{k:06d}.jpg"), f, [cv2.IMWRITE_JPEG_QUALITY, 95])
-    (avatar / "w2l_info.json").write_text(json.dumps({"frames": len(frames), "width": w, "height": h,
+    for i in range(len(arr)):
+        win = arr[len(arr) - T:] if i + T > len(arr) else arr[i:i + T]
+        sm[i] = win.mean(axis=0)
+    sm = sm.astype(np.int32)
+    if ((sm[:, 1] - sm[:, 0]) < 16).any() or ((sm[:, 3] - sm[:, 2]) < 16).any():
+        raise SystemExit("ERROR: la región del rostro es demasiado pequeña. Acérquese a la cámara.")
+    np.save(avatar / "boxes.npy", sm)
+    (avatar / "w2l_info.json").write_text(json.dumps({"frames": k, "width": w, "height": h,
                                                       "fps": FPS, "missing_faces": len(boxes) - len(valid)}))
-    print(f"Aprendizaje listo: {len(frames)} cuadros, {len(boxes) - len(valid)} sin rostro interpolados.", flush=True)
+    print(f"Aprendizaje listo: {k} cuadros, {len(boxes) - len(valid)} sin rostro interpolados.", flush=True)
 
 
 # ------------------------------------------------------------------ generación
@@ -230,7 +252,7 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--checkpoint")
     ap.add_argument("--batch", type=int, default=32)
-    ap.add_argument("--det-batch", type=int, default=8)
+    ap.add_argument("--det-batch", type=int, default=int(os.getenv("W2L_DET_BATCH", "4")))
     args = ap.parse_args()
     sys.path.insert(0, args.w2l)
     os.chdir(args.w2l)  # face_detection busca sus pesos con rutas relativas al paquete

@@ -22,7 +22,7 @@ if [ "${SKIP_PIP:-0}" != "1" ]; then
   else
     "$PY" -m pip install torch --index-url https://download.pytorch.org/whl/cpu
   fi
-  "$PY" -m pip install "librosa>=0.10" scipy soundfile "opencv-python-headless>=4.8,<5" numpy
+  "$PY" -m pip install "librosa>=0.10" scipy soundfile tqdm "opencv-python-headless>=4.8,<5" numpy
 fi
 
 download () {  # destino url1 url2 ...

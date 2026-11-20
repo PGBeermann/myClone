@@ -9,6 +9,7 @@ services:
     environment:
       APP_TOKEN: ${APP_TOKEN:-}          # clave de acceso (obligatoria si se expone a Internet)
       W2L_BATCH: ${W2L_BATCH:-32}
+      W2L_DET_BATCH: ${W2L_DET_BATCH:-4}   # bajar a 2 si el VPS tiene poca RAM
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
     volumes:
       - clon_data:/data

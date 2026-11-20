@@ -77,9 +77,19 @@ let camStream = null, recorder = null, recTimer = null;
 
 $("#btnCam").addEventListener("click", async () => {
   try {
+    // En celular en posición vertical se pide imagen vertical; así no se recorta ni se amplía.
+    const portrait = window.matchMedia("(orientation: portrait)").matches;
+    const [w, h] = portrait ? [720, 1280] : [1280, 720];
     camStream = await navigator.mediaDevices.getUserMedia({
-      video: {width: {ideal: 1280}, height: {ideal: 720}, frameRate: {ideal: 25}, facingMode: "user"}, audio: false});
-    $("#cam").srcObject = camStream;
+      video: {width: {ideal: w}, height: {ideal: h}, frameRate: {ideal: 25}, facingMode: "user"}, audio: false});
+    const cam = $("#cam");
+    cam.srcObject = camStream;
+    // El recuadro adopta la proporción REAL que entrega la cámara (vertical u horizontal).
+    cam.onloadedmetadata = () => {
+      if (cam.videoWidth && cam.videoHeight)
+        $(".stage").style.setProperty("--cam-ar", (cam.videoWidth / cam.videoHeight).toFixed(4));
+    };
+    cam.onresize = cam.onloadedmetadata;  // al girar el celular
     $("#btnRec").disabled = false;
     $("#prompter").textContent = "Ubique su rostro dentro del óvalo y pulse Grabar.";
   } catch (e) {

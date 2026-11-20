@@ -131,6 +131,11 @@ class Wav2LipEngine:
         for p in (self.ckpt, self.s3fd):
             if not p.exists():
                 problems.append(f"Falta el archivo de pesos: {p.name}")
+        # Dependencias que el detector S3FD de Wav2Lip importa y que no trae ninguna otra librería.
+        import importlib.util
+        for mod in ("torch", "tqdm", "librosa", "scipy"):
+            if importlib.util.find_spec(mod) is None:
+                problems.append(f"Falta el paquete de Python '{mod}' (pip install {mod})")
         return problems
 
     def _avatar_dir(self, avatar_id: str) -> Path:
@@ -147,8 +152,11 @@ class Wav2LipEngine:
                                 stdin=subprocess.DEVNULL, text=True, bufsize=1)
         assert proc.stdout
         last_pct = -1
+        tail: list[str] = []
         for line in proc.stdout:
             line = line.rstrip()
+            if line and not line.startswith("PROGRESO") and "Warning" not in line:
+                tail = (tail + [line])[-6:]
             if line.startswith("PROGRESO"):
                 _, label, frac = line.split()
                 a, b = (int(x) for x in frac.split("/"))
@@ -160,7 +168,21 @@ class Wav2LipEngine:
                 log(line)
         rc = proc.wait()
         if rc != 0:
-            raise EngineError(f"Wav2Lip terminó con código {rc}. Revise la bitácora.")
+            raise EngineError(self._explain(rc, tail))
+
+    @staticmethod
+    def _explain(rc: int, tail: list[str]) -> str:
+        """Traduce el fallo del subproceso a un mensaje accionable para la interfaz."""
+        if rc in (-9, 137):
+            return ("El sistema terminó el proceso por FALTA DE MEMORIA RAM. Reduzca W2L_DET_BATCH "
+                    "(p. ej. 2), grabe un video más corto o asigne más memoria al contenedor.")
+        own = [t for t in tail if t.startswith("ERROR:")]
+        if own:
+            return own[-1][6:].strip()
+        last = tail[-1] if tail else ""
+        if "ModuleNotFoundError" in last:
+            return f"Dependencia faltante en el servidor: {last.split(':', 1)[-1].strip()}. Reconstruya la imagen."
+        return f"Wav2Lip terminó con código {rc}: {last[:300] or 'revise la bitácora.'}"
 
     def prepare(self, avatar_id: str, video_path: Path, log: Log) -> None:
         d = self._avatar_dir(avatar_id)
